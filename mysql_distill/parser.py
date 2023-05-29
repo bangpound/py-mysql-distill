@@ -1,3 +1,8 @@
+"""
+Parser for MySQL queries.
+
+This file is part of the mysql_distill package.
+"""
 import re
 import logging
 
@@ -48,10 +53,12 @@ def get_tables(query: str) -> List[str]:
         ddl_stmt = match.group(1)
         logger.debug("Special table type: %s", ddl_stmt)
         query = re.sub(r"IF\s+(?:NOT\s+)?EXISTS", "", query, flags=re.IGNORECASE)
+
         if re.search(rf"{ddl_stmt} DATABASE\b", query, flags=re.IGNORECASE):
             logger.debug("Query alters database, not a table")
             return []
-        if re.search(rf"CREATE.+?\bSELECT\b", query, flags=re.IGNORECASE):
+
+        if re.search(r"CREATE.+?\bSELECT\b", query, flags=re.IGNORECASE):
             select = re.search(
                 r"\b(SELECT\b.+)", query, flags=re.IGNORECASE | re.DOTALL
             )
@@ -80,9 +87,10 @@ def get_tables(query: str) -> List[str]:
         logger.debug("Locked tables: %s")
         query = "FROM " + query
 
-    query = re.sub(r'\\["' r"']", "", query)  # quoted strings
-    query = re.sub('".*?"', "?", query, flags=re.DOTALL)  # quoted strings
-    query = re.sub("'.*?'", "?", query, flags=re.DOTALL)  # quoted strings
+    # quoted strings
+    query = re.sub(r"""\\["']""", "", query)
+    query = re.sub('".*?"', "?", query, flags=re.DOTALL)
+    query = re.sub("'.*?'", "?", query, flags=re.DOTALL)
 
     if re.search(r"\A\s*(?:INSERT|REPLACE)(?!\s+INTO)", query, flags=re.IGNORECASE):
         query = re.sub(

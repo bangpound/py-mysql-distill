@@ -1,3 +1,32 @@
+"""
+Rewrite queries for canonical form
+
+The distill() function is the main entry point. It takes a query string
+and returns the canonical form of the query.
+
+The distill_verbs() function is a helper function that distills only the
+verbs from a query. It is used by the distill() function.
+
+The distill_tables() function is a helper function that distills only the
+tables from a query. It is used by the distill() function.
+
+The strip_comments() function is a helper function that removes comments
+from a query. It is used by the distill_verbs() function.
+
+The following variables are regular expressions that match various types
+of comments in a query:
+
+olc_re: One-line comments
+mlc_re: Multi-line comments
+vlc_re: Version comments
+vlc_rf: Version comments for SHOW queries
+
+The following variables are regular expressions that match the start of
+various types of queries:
+
+call_re: Stored procedure calls
+VERBS:   Verbs that start queries
+"""
 import re
 import logging
 
@@ -7,7 +36,10 @@ import mysql_distill.parser
 
 logger = logging.getLogger(__name__)
 
-VERBS: str = r"(^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT|UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK)"
+VERBS: str = (
+    r"(^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|"
+    r"INSERT|UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK)"
+)
 
 call_re: Pattern[str] = re.compile(r"\A\s*call\s+(\S+)\(", flags=re.IGNORECASE)
 
@@ -40,8 +72,8 @@ def distill(query: str) -> str:
 
     if verbs and re.match(r"^SHOW", verbs):
         alias_for = {"SCHEMA": "DATABASE", "KEYS": "INDEX", "INDEXES": "INDEX"}
-        for key in alias_for:
-            verbs = re.sub(key, alias_for[key], verbs)
+        for alias_for_key, alias_for_value in alias_for.items():
+            verbs = re.sub(alias_for_key, alias_for_value, verbs)
         query = verbs
     elif verbs and re.match(r"^LOAD DATA", verbs):
         return verbs

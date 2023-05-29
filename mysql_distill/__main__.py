@@ -1,3 +1,8 @@
+"""
+Usage:
+    mysql-distill --query "SELECT * FROM table WHERE id = 1"
+    cat queries.sql | mysql-distill
+"""
 import argparse
 import re
 import sys
