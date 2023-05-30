@@ -30,7 +30,7 @@ VERBS:   Verbs that start queries
 import re
 import logging
 
-from typing import Tuple, Pattern, Match, List, Union
+from typing import Tuple, Pattern, Match, List, Optional
 
 import mysql_distill
 
@@ -71,10 +71,18 @@ _verb_use_re: Pattern[str] = re.compile(r"^USE", flags=re.IGNORECASE)
 _verb_unlock_re: Pattern[str] = re.compile(r"\A\s*UNLOCK TABLES", flags=re.IGNORECASE)
 _verb_xa_re: Pattern[str] = re.compile(r"\A\s*xa\s+(\S+)", flags=re.IGNORECASE)
 
+_show_modifier_re = re.compile(r"\s+(?:SESSION|FULL|STORAGE|ENGINE)\b")
+_show_modifier_count_re = re.compile(r"\s+COUNT[^)]+\)")
+_show_modifier_predicate_re = re.compile(
+    r"\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+", flags=re.MULTILINE | re.DOTALL
+)
+_show_modifier_2_rs = re.compile(r"\A(SHOW(?:\s+\S+){1,2}).*\Z", flags=re.DOTALL)
+_whitespace_re = re.compile(r"\s+")
+
 _predicate_into_table_re = re.compile(r"INTO TABLE\s+(\S+)", flags=re.IGNORECASE)
 
 _dds_match_re: Pattern[str] = re.compile(
-    rf"^\s*({mysql_distill.data_def_stmts})\b", flags=re.IGNORECASE
+    rf"^\s*({mysql_distill.parser.data_def_stmts})\b", flags=re.IGNORECASE
 )
 _table_name_rewrite_re: Pattern[str] = re.compile(r"(_?)[0-9]+")
 
@@ -109,7 +117,7 @@ def distill_verbs(query: str) -> Tuple[str, str]:
     :param query:
     :return:
     """
-    match: Union[Match[str], None] = _verb_call_re.match(query)
+    match: Optional[Match[str]] = _verb_call_re.match(query)
     if match:
         return rf"CALL {match.group(1)}", ""
 
@@ -141,31 +149,26 @@ def distill_verbs(query: str) -> Tuple[str, str]:
     if _verb_show_ws_re.match(query):
         _logger.debug(query)
         query = query.upper()
-        query = re.sub(r"\s+(?:SESSION|FULL|STORAGE|ENGINE)\b", " ", query)
-        query = re.sub(r"\s+COUNT[^)]+\)", "", query)
-        query = re.sub(
-            r"\s+(?:FOR|FROM|LIKE|WHERE|LIMIT|IN)\b.+",
-            "",
-            query,
-            flags=re.MULTILINE | re.DOTALL,
-        )
-        query = re.sub(r"\A(SHOW(?:\s+\S+){1,2}).*\Z", r"\1", query, flags=re.DOTALL)
-        query = re.sub(r"\s+", " ", query)
+        query = _show_modifier_re.sub(" ", query)
+        query = _show_modifier_count_re.sub("", query)
+        query = _show_modifier_predicate_re.sub("", query)
+        query = _show_modifier_2_rs.sub(r"\1", query)
+        query = _whitespace_re.sub(" ", query)
         _logger.debug(query)
         return query, ""
 
-    dds_match: Match[str] = _dds_match_re.match(query)
+    dds_match: Optional[Match[str]] = _dds_match_re.match(query)
     if dds_match:
         dds: str = dds_match.group(1)
         query = re.sub(r"\s+IF(?:\s+NOT)?\s+EXISTS", " ", query, re.IGNORECASE)
-        obj_match: Match[str] | None = re.search(
+        obj_match: Optional[Match[str]] = re.search(
             rf"{dds}.+(DATABASE|TABLE)\b", query, re.IGNORECASE
         )
         obj: str = ""
         if obj_match:
             obj = obj_match.group(1).upper()
         _logger.debug('Data definition statement "%s" for %s', dds, obj)
-        db_or_tbl_match: Match[str] | None = re.search(
+        db_or_tbl_match: Optional[Match[str]] = re.search(
             rf"(?:TABLE|DATABASE)\s+({mysql_distill.tbl_ident_sub})(\s+.*)?",
             query,
             re.IGNORECASE,
