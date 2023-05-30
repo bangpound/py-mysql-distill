@@ -7,7 +7,7 @@ import mysql_distill
 class TestQueryParser(unittest.TestCase):
     def test_get_tables(self):
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 (
                     "REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, "
                     "chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', "
@@ -33,7 +33,7 @@ class TestQueryParser(unittest.TestCase):
             msg="gets tables from nasty checksum query",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C"
             ),
             ["A", "B", "C"],
@@ -41,7 +41,7 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "replace into checksum.checksum select `last_update`, `foo` from foo.foo"
             ),
             ["checksum.checksum", "foo.foo"],
@@ -49,7 +49,7 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "SELECT * FROM (SELECT * FROM foo WHERE UserId = 577854809 ORDER BY foo DESC) q1 GROUP BY foo ORDER BY bar DESC LIMIT 3"
             ),
             ["foo"],
@@ -57,7 +57,7 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 'INSERT INTO my.tbl VALUES("I got this from the newspaper")'
             ),
             ["my.tbl"],
@@ -65,24 +65,22 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("create table db.tbl (i int)"),
+            mysql_distill.get_tables("create table db.tbl (i int)"),
             ["db.tbl"],
             msg="get_tables: CREATE TABLE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables("create TEMPORARY table db.tbl2 (i int)"),
+            mysql_distill.get_tables("create TEMPORARY table db.tbl2 (i int)"),
             ["db.tbl2"],
             msg="get_tables: CREATE TEMPORARY TABLE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables(
-                "create table if not exists db.tbl (i int)"
-            ),
+            mysql_distill.get_tables("create table if not exists db.tbl (i int)"),
             ["db.tbl"],
             msg="get_tables: CREATE TABLE IF NOT EXISTS",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "create TEMPORARY table IF NOT EXISTS db.tbl3 (i int)"
             ),
             ["db.tbl3"],
@@ -90,7 +88,7 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "CREATE TEMPORARY TABLE `foo` AS select * from bar where id = 1"
             ),
             ["bar"],
@@ -98,31 +96,31 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("ALTER TABLE db.tbl ADD COLUMN (j int)"),
+            mysql_distill.get_tables("ALTER TABLE db.tbl ADD COLUMN (j int)"),
             ["db.tbl"],
             "get_tables: ALTER TABLE",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("DROP TABLE db.tbl"),
+            mysql_distill.get_tables("DROP TABLE db.tbl"),
             ["db.tbl"],
             "get_tables: DROP TABLE",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("truncate table db.tbl"),
+            mysql_distill.get_tables("truncate table db.tbl"),
             ["db.tbl"],
             "get_tables: TRUNCATE TABLE",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("create database foo"),
+            mysql_distill.get_tables("create database foo"),
             [],
             "get_tables: CREATE DATABASE (no tables)",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 'INSERT INTO `foo` (`s`,`from`,`t`,`p`) VALVUES ("not","me","foo",1)'
             ),
             ["`foo`"],
@@ -131,7 +129,7 @@ class TestQueryParser(unittest.TestCase):
 
     def _test_query(self, query, aliases, tables, msg):
         self.assertEqual(
-            mysql_distill.parser.get_tables(query), tables, msg=f"get_tables: {msg}"
+            mysql_distill.get_tables(query), tables, msg=f"get_tables: {msg}"
         )
 
     def test_one_table(self):
@@ -717,47 +715,43 @@ class TestQueryParser(unittest.TestCase):
         # #############################################################################
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("LOCK TABLES foo READ"),
+            mysql_distill.get_tables("LOCK TABLES foo READ"),
             ["foo"],
             "LOCK TABLES foo READ",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables("LOCK TABLES foo WRITE"),
+            mysql_distill.get_tables("LOCK TABLES foo WRITE"),
             ["foo"],
             "LOCK TABLES foo WRITE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables("LOCK TABLES foo READ, bar WRITE"),
+            mysql_distill.get_tables("LOCK TABLES foo READ, bar WRITE"),
             ["foo", "bar"],
             "LOCK TABLES foo READ, bar WRITE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables("LOCK TABLES foo AS als WRITE"),
+            mysql_distill.get_tables("LOCK TABLES foo AS als WRITE"),
             ["foo"],
             "LOCK TABLES foo AS als WRITE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables(
-                "LOCK TABLES foo AS als1 READ, bar AS als2 WRITE"
-            ),
+            mysql_distill.get_tables("LOCK TABLES foo AS als1 READ, bar AS als2 WRITE"),
             ["foo", "bar"],
             "LOCK TABLES foo AS als READ, bar AS als2 WRITE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables("LOCK TABLES foo als WRITE"),
+            mysql_distill.get_tables("LOCK TABLES foo als WRITE"),
             ["foo"],
             "LOCK TABLES foo als WRITE",
         )
         self.assertEqual(
-            mysql_distill.parser.get_tables(
-                "LOCK TABLES foo als1 READ, bar als2 WRITE"
-            ),
+            mysql_distill.get_tables("LOCK TABLES foo als1 READ, bar als2 WRITE"),
             ["foo", "bar"],
             "LOCK TABLES foo als READ, bar als2 WRITE",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 """CREATE TEMPORARY TABLE mk_upgrade AS SELECT col1, col2
                 FROM foo, bar
                 WHERE id = 1"""
@@ -767,19 +761,19 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("select * from (`mytable`)"),
+            mysql_distill.get_tables("select * from (`mytable`)"),
             ["`mytable`"],
             "Get tables when there are parens around table name (issue 781)",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables("select * from (select * from mytable) t"),
+            mysql_distill.get_tables("select * from (select * from mytable) t"),
             ["mytable"],
             "Does not consider subquery SELECT as a table (issue 781)",
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "lock tables t1 as t5 read local, t2 low_priority write"
             ),
             ["t1", "t2"],
@@ -787,7 +781,7 @@ class TestQueryParser(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.parser.get_tables(
+            mysql_distill.get_tables(
                 "LOAD DATA INFILE '/tmp/foo.txt' INTO TABLE db.tbl"
             ),
             ["db.tbl"],

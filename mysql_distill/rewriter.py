@@ -30,35 +30,53 @@ VERBS:   Verbs that start queries
 import re
 import logging
 
-from typing import Tuple, Pattern, Match, List
+from typing import Tuple, Pattern, Match, List, Union
 
-import mysql_distill.parser
+import mysql_distill
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
-VERBS: str = (
+_verbs_re_pattern: str = (
     r"(^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|"
     r"INSERT|UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK)"
 )
-
-call_re: Pattern[str] = re.compile(r"\A\s*call\s+(\S+)\(", flags=re.IGNORECASE)
+_verbs_re = re.compile(rf"\b{_verbs_re_pattern}\b", re.IGNORECASE)
 
 # One-line comments
-olc_re: Pattern[str] = re.compile(
+_olc_re: Pattern[str] = re.compile(
     r"(?:--|#)[^'\"\r\n]*(?=[\r\n]|$)", flags=re.MULTILINE
 )
 
 # But not /*!version */
-mlc_re: Pattern[str] = re.compile(r"/\*[^!].*?\*/", flags=re.DOTALL | re.MULTILINE)
+_mlc_re: Pattern[str] = re.compile(r"/\*[^!].*?\*/", flags=re.DOTALL | re.MULTILINE)
 
 # For SHOW + /*!version */
-vlc_re: Pattern[str] = re.compile(r"/\*.*?[0-9]+.*?\*/", flags=re.DOTALL | re.MULTILINE)
+_vlc_re: Pattern[str] = re.compile(
+    r"/\*.*?[0-9]+.*?\*/", flags=re.DOTALL | re.MULTILINE
+)
 
 # Variation for SHOW
-vlc_rf: Pattern[str] = re.compile(
+_vlc_rf: Pattern[str] = re.compile(
     r"^SHOW.*?/\*![0-9]+(.*?)\*/",
     flags=re.IGNORECASE | re.DOTALL | re.MULTILINE,
 )
+
+_verb_call_re: Pattern[str] = re.compile(r"\A\s*call\s+(\S+)\(", flags=re.IGNORECASE)
+_verb_show_re: Pattern[str] = re.compile(r"^SHOW", flags=re.IGNORECASE)
+_verb_show_ws_re = re.compile(r"\A\s*SHOW\s+", re.IGNORECASE)
+_verb_load_re = re.compile(r"\A\s*LOAD", flags=re.IGNORECASE)
+_verb_admin_command_re = re.compile(r"\Aadministrator command:")
+_verb_load_data_re: Pattern[str] = re.compile(r"^LOAD DATA", flags=re.IGNORECASE)
+_verb_use_re: Pattern[str] = re.compile(r"^USE", flags=re.IGNORECASE)
+_verb_unlock_re: Pattern[str] = re.compile(r"\A\s*UNLOCK TABLES", flags=re.IGNORECASE)
+_verb_xa_re: Pattern[str] = re.compile(r"\A\s*xa\s+(\S+)", flags=re.IGNORECASE)
+
+_predicate_into_table_re = re.compile(r"INTO TABLE\s+(\S+)", flags=re.IGNORECASE)
+
+_dds_match_re: Pattern[str] = re.compile(
+    rf"^\s*({mysql_distill.data_def_stmts})\b", flags=re.IGNORECASE
+)
+_table_name_rewrite_re: Pattern[str] = re.compile(r"(_?)[0-9]+")
 
 
 def distill(query: str) -> str:
@@ -70,12 +88,12 @@ def distill(query: str) -> str:
     """
     verbs, table = distill_verbs(query)
 
-    if verbs and re.match(r"^SHOW", verbs):
+    if verbs and _verb_show_re.match(verbs):
         alias_for = {"SCHEMA": "DATABASE", "KEYS": "INDEX", "INDEXES": "INDEX"}
         for alias_for_key, alias_for_value in alias_for.items():
-            verbs = re.sub(alias_for_key, alias_for_value, verbs)
+            verbs = verbs.replace(alias_for_key, alias_for_value)
         query = verbs
-    elif verbs and re.match(r"^LOAD DATA", verbs):
+    elif verbs and _verb_load_data_re.match(verbs):
         return verbs
     else:
         tables = _distill_tables(query, table)
@@ -91,35 +109,37 @@ def distill_verbs(query: str) -> Tuple[str, str]:
     :param query:
     :return:
     """
-    match = call_re.match(query)
+    match: Union[Match[str], None] = _verb_call_re.match(query)
     if match:
         return rf"CALL {match.group(1)}", ""
 
-    if re.match(r"\A\s*use\s+", query, re.IGNORECASE):
+    if _verb_use_re.match(query):
         return "USE", ""
 
-    if re.match(r"\A\s*UNLOCK TABLES", query, re.IGNORECASE):
+    if _verb_unlock_re.match(query):
         return "UNLOCK", ""
 
-    match = re.match(r"\A\s*xa\s+(\S+)", query, re.IGNORECASE)
+    match = _verb_xa_re.match(query)
     if match:
         return f"XA_{match.group(1)}", ""
 
-    if re.match(r"\A\s*LOAD", query, re.IGNORECASE):
-        match = re.search(r"INTO TABLE\s+(\S+)", query, re.IGNORECASE)
-        tbl = match.group(1) if match else ""
+    if _verb_load_re.match(query):
+        match = _predicate_into_table_re.search(query)
+        tbl = ""
+        if match:
+            tbl = match.group(1)
         tbl = tbl.replace("`", "")
         return f"LOAD DATA {tbl}", ""
 
-    if re.match(r"\Aadministrator command:", query):
+    if _verb_admin_command_re.match(query):
         query = query.replace("administrator command:", "ADMIN")
         query = query.upper()
         return query, ""
 
     query = strip_comments(query)
 
-    if re.match(r"\A\s*SHOW\s+", query, re.IGNORECASE):
-        logger.debug(query)
+    if _verb_show_ws_re.match(query):
+        _logger.debug(query)
         query = query.upper()
         query = re.sub(r"\s+(?:SESSION|FULL|STORAGE|ENGINE)\b", " ", query)
         query = re.sub(r"\s+COUNT[^)]+\)", "", query)
@@ -131,12 +151,10 @@ def distill_verbs(query: str) -> Tuple[str, str]:
         )
         query = re.sub(r"\A(SHOW(?:\s+\S+){1,2}).*\Z", r"\1", query, flags=re.DOTALL)
         query = re.sub(r"\s+", " ", query)
-        logger.debug(query)
+        _logger.debug(query)
         return query, ""
 
-    dds_match: Match[str] | None = re.match(
-        rf"^\s*({mysql_distill.parser.data_def_stmts})\b", query, re.IGNORECASE
-    )
+    dds_match: Match[str] = _dds_match_re.match(query)
     if dds_match:
         dds: str = dds_match.group(1)
         query = re.sub(r"\s+IF(?:\s+NOT)?\s+EXISTS", " ", query, re.IGNORECASE)
@@ -146,24 +164,24 @@ def distill_verbs(query: str) -> Tuple[str, str]:
         obj: str = ""
         if obj_match:
             obj = obj_match.group(1).upper()
-        logger.debug('Data definition statement "%s" for %s', dds, obj)
+        _logger.debug('Data definition statement "%s" for %s', dds, obj)
         db_or_tbl_match: Match[str] | None = re.search(
-            rf"(?:TABLE|DATABASE)\s+({mysql_distill.parser.tbl_ident_sub})(\s+.*)?",
+            rf"(?:TABLE|DATABASE)\s+({mysql_distill.tbl_ident_sub})(\s+.*)?",
             query,
             re.IGNORECASE,
         )
         db_or_tbl: str = ""
         if db_or_tbl_match:
             db_or_tbl = db_or_tbl_match.group(1)
-        logger.debug("Matches db or table: %s", db_or_tbl)
+        _logger.debug("Matches db or table: %s", db_or_tbl)
         return dds.upper() + (" " + obj if obj else ""), db_or_tbl
 
-    verbs = re.findall(rf"\b{VERBS}\b", query, re.IGNORECASE)
+    verbs = _verbs_re.findall(query)
     last = ""
     verbs = [last := v for v in map(str.upper, verbs) if v != last]
 
     if verbs and verbs[0] == "SELECT" and len(verbs) > 1:
-        logger.debug('False-positive verbs after SELECT: "%s"', verbs[1:])
+        _logger.debug('False-positive verbs after SELECT: "%s"', verbs[1:])
         union = any(verb == "UNION" for verb in verbs)
         verbs = ["SELECT", "UNION"] if union else ["SELECT"]
 
@@ -175,13 +193,13 @@ def _distill_tables(query: str, table: str) -> List[str]:
     """
     Distill the tables from a query
 
-    :param query:
-    :param table:
-    :return:
+    :param query: The query to distill
+    :param table: The table to add to the list of tables
+    :return: The list of tables
     """
     tables = [
-        re.sub(r"(_?)[0-9]+", r"\1?", table_name.replace("`", ""))
-        for table_name in mysql_distill.parser.get_tables(query)
+        _table_name_rewrite_re.sub(r"\1?", table_name.replace("`", ""))
+        for table_name in mysql_distill.get_tables(query)
         if table_name is not None
     ]
 
@@ -189,7 +207,8 @@ def _distill_tables(query: str, table: str) -> List[str]:
         tables.append(table)
 
     # Remove duplicates while maintaining order
-    tables = list(dict.fromkeys(tables))
+    last = ""
+    tables = [last := table_name for table_name in tables if table_name != last]
 
     return tables
 
@@ -197,13 +216,13 @@ def _distill_tables(query: str, table: str) -> List[str]:
 def strip_comments(query: str) -> str:
     """
     Strip comments from a query
-    :param query:
+    :param query: The query to strip comments from
     :return:
     """
-    query = mlc_re.sub("", query)
-    query = olc_re.sub("", query)
-    match = vlc_rf.match(query)
+    query = _mlc_re.sub("", query)
+    query = _olc_re.sub("", query)
+    match = _vlc_rf.match(query)
     if match:
-        qualifier = match.group(1) or ""
-        query = vlc_re.sub(qualifier, query)
+        qualifier = match.group(1)
+        query = _vlc_re.sub(qualifier, query)
     return query

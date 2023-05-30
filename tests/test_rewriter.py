@@ -7,21 +7,19 @@ import mysql_distill
 class TestQueryRewriter(unittest.TestCase):
     def test_distill(self):
         self.assertEqual(
-            mysql_distill.rewriter.distill(
-                "SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"
-            ),
+            mysql_distill.distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
             "SELECT film",
             "Distills mysqldump SELECTs to selects",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("CALL foo(1, 2, 3)"),
+            mysql_distill.distill("CALL foo(1, 2, 3)"),
             "CALL foo",
             "Distills stored procedure calls specially",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 (
                     "REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, "
                     "chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', "
@@ -48,13 +46,13 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("use `foo`"),
+            mysql_distill.distill("use `foo`"),
             "USE",
             "distills USE",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 r"delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight"
             ),
             "DELETE foo.bar baz.bat",
@@ -62,19 +60,19 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("select \n--bar\n foo"),
+            mysql_distill.distill("select \n--bar\n foo"),
             "SELECT",
             "distills queries from DUAL",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("select null, 5.001, 5001. from foo"),
+            mysql_distill.distill("select null, 5.001, 5001. from foo"),
             "SELECT foo",
             "distills simple select",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "select 'hello', '\nhello\n', \"hello\", '\\'' from foo"
             ),
             "SELECT foo",
@@ -82,33 +80,31 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("select foo_1 from foo_2_3"),
+            mysql_distill.distill("select foo_1 from foo_2_3"),
             "SELECT foo_?_?",
             "distills numeric table names",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
-                "insert into abtemp.coxed select foo.bar from foo"
-            ),
+            mysql_distill.distill("insert into abtemp.coxed select foo.bar from foo"),
             "INSERT SELECT abtemp.coxed foo",
             "distills insert/select",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("insert into foo(a, b, c) values(2, 4, 5)"),
+            mysql_distill.distill("insert into foo(a, b, c) values(2, 4, 5)"),
             "INSERT foo",
             "distills value lists",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("select 1 union select 2 union select 4"),
+            mysql_distill.distill("select 1 union select 2 union select 4"),
             "SELECT UNION",
             "distill unions together",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "delete from foo where bar = baz",
             ),
             "DELETE foo",
@@ -116,13 +112,13 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("set timestamp=134"),
+            mysql_distill.distill("set timestamp=134"),
             "SET",
             "distills set",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar",
             ),
             "REPLACE UPDATE foo",
@@ -130,7 +126,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 (
                     "UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET "
                     "GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME="
@@ -146,7 +142,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 r"SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C"
             ),
             "SELECT A B C",
@@ -154,7 +150,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 r"""
         REPLACE DELAYED INTO
         `db1`.`tbl2`(`col1`,col2)
@@ -165,7 +161,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "update foo inner join bar using(baz) set big=little",
             ),
             "UPDATE foo bar",
@@ -173,7 +169,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 """
         update db2.tbl1 as p
            inner join (
@@ -193,7 +189,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "replace into checksum.checksum select `last_update`, `foo` from foo.foo"
             ),
             "REPLACE SELECT checksum.checksum foo.foo",
@@ -201,35 +197,29 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW STATUS"),
+            mysql_distill.distill("SHOW STATUS"),
             "SHOW STATUS",
             "distill SHOW STATUS",
         )
 
-        self.assertEqual(
-            mysql_distill.rewriter.distill("commit"), "COMMIT", "distill COMMIT"
-        )
+        self.assertEqual(mysql_distill.distill("commit"), "COMMIT", "distill COMMIT")
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("FLUSH TABLES WITH READ LOCK"),
+            mysql_distill.distill("FLUSH TABLES WITH READ LOCK"),
             "FLUSH",
             "distill FLUSH",
         )
 
+        self.assertEqual(mysql_distill.distill("BEGIN"), "BEGIN", "distill BEGIN")
+
+        self.assertEqual(mysql_distill.distill("start"), "START", "distill START")
+
         self.assertEqual(
-            mysql_distill.rewriter.distill("BEGIN"), "BEGIN", "distill BEGIN"
+            mysql_distill.distill("ROLLBACK"), "ROLLBACK", "distill ROLLBACK"
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("start"), "START", "distill START"
-        )
-
-        self.assertEqual(
-            mysql_distill.rewriter.distill("ROLLBACK"), "ROLLBACK", "distill ROLLBACK"
-        )
-
-        self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "insert into foo select * from bar join baz using (bat)",
             ),
             "INSERT SELECT foo bar baz",
@@ -237,52 +227,52 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("create database foo"),
+            mysql_distill.distill("create database foo"),
             "CREATE DATABASE foo",
             "distills create database",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("create table foo"),
+            mysql_distill.distill("create table foo"),
             "CREATE TABLE foo",
             "distills create table",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("alter database foo"),
+            mysql_distill.distill("alter database foo"),
             "ALTER DATABASE foo",
             "distills alter database",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("alter table foo"),
+            mysql_distill.distill("alter table foo"),
             "ALTER TABLE foo",
             "distills alter table",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("drop database foo"),
+            mysql_distill.distill("drop database foo"),
             "DROP DATABASE foo",
             "distills drop database",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("drop table foo"),
+            mysql_distill.distill("drop table foo"),
             "DROP TABLE foo",
             "distills drop table",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("rename database foo"),
+            mysql_distill.distill("rename database foo"),
             "RENAME DATABASE foo",
             "distills rename database",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("rename table foo"),
+            mysql_distill.distill("rename table foo"),
             "RENAME TABLE foo",
             "distills rename table",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("truncate table foo"),
+            mysql_distill.distill("truncate table foo"),
             "TRUNCATE TABLE foo",
             "distills truncate table",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "update foo set bar=baz where bat=fiz",
             ),
             "UPDATE foo",
@@ -291,42 +281,42 @@ class TestQueryRewriter(unittest.TestCase):
 
         # Issue 563: Lock tables is not distilled
         self.assertEqual(
-            mysql_distill.rewriter.distill("LOCK TABLES foo WRITE"),
+            mysql_distill.distill("LOCK TABLES foo WRITE"),
             "LOCK foo",
             "distills lock tables",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("LOCK TABLES foo READ, bar WRITE"),
+            mysql_distill.distill("LOCK TABLES foo READ, bar WRITE"),
             "LOCK foo bar",
             "distills lock tables (2 tables)",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("UNLOCK TABLES"),
+            mysql_distill.distill("UNLOCK TABLES"),
             "UNLOCK",
             "distills unlock tables",
         )
 
         #  Issue 712: Queries not handled by "distill"
         self.assertEqual(
-            mysql_distill.rewriter.distill("XA START 0x123"),
+            mysql_distill.distill("XA START 0x123"),
             "XA_START",
             "distills xa start",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("XA PREPARE 0x123"),
+            mysql_distill.distill("XA PREPARE 0x123"),
             "XA_PREPARE",
             "distills xa prepare",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("XA COMMIT 0x123"),
+            mysql_distill.distill("XA COMMIT 0x123"),
             "XA_COMMIT",
             "distills xa commit",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("XA END 0x123"), "XA_END", "distills xa end"
+            mysql_distill.distill("XA END 0x123"), "XA_END", "distills xa end"
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 """/* mysql-connector-java-5.1-nightly-20090730 ( Revision: \\${svn.Revision} ) */SHOW VARIABLES WHERE Variable_name ='language' OR Variable_name =
            'net_write_timeout' OR Variable_name = 'interactive_timeout' OR
            Variable_name = 'wait_timeout' OR Variable_name = 'character_set_client' OR
@@ -438,21 +428,21 @@ class TestQueryRewriter(unittest.TestCase):
         }
         for key, status_test in status_tests.items():
             self.assertEqual(
-                mysql_distill.rewriter.distill(key), status_test, msg=f"distills {key}"
+                mysql_distill.distill(key), status_test, msg=f"distills {key}"
             )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW SLAVE STATUS"),
+            mysql_distill.distill("SHOW SLAVE STATUS"),
             "SHOW SLAVE STATUS",
             "distills SHOW SLAVE STATUS",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW INNODB STATUS"),
+            mysql_distill.distill("SHOW INNODB STATUS"),
             "SHOW INNODB STATUS",
             "distills SHOW INNODB STATUS",
         )
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW CREATE TABLE"),
+            mysql_distill.distill("SHOW CREATE TABLE"),
             "SHOW CREATE TABLE",
             "distills SHOW CREATE TABLE",
         )
@@ -468,51 +458,51 @@ class TestQueryRewriter(unittest.TestCase):
         ]
         for show in shows:
             self.assertEqual(
-                mysql_distill.rewriter.distill(f"SHOW {show}"),
+                mysql_distill.distill(f"SHOW {show}"),
                 f"SHOW {show}",
                 f"distills SHOW {show}",
             )
 
         #  Issue 735: mk-query-digest doesn't distill query correctly
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW /*!50002 GLOBAL */ STATUS"),
+            mysql_distill.distill("SHOW /*!50002 GLOBAL */ STATUS"),
             "SHOW GLOBAL STATUS",
             "distills SHOW /*!50002 GLOBAL */ STATUS",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW /*!50002 ENGINE */ INNODB STATUS"),
+            mysql_distill.distill("SHOW /*!50002 ENGINE */ INNODB STATUS"),
             "SHOW INNODB STATUS",
             "distills SHOW INNODB STATUS",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW MASTER LOGS"),
+            mysql_distill.distill("SHOW MASTER LOGS"),
             "SHOW MASTER LOGS",
             "distills SHOW MASTER LOGS",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW GLOBAL STATUS"),
+            mysql_distill.distill("SHOW GLOBAL STATUS"),
             "SHOW GLOBAL STATUS",
             "distills SHOW GLOBAL STATUS",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("SHOW GLOBAL VARIABLES"),
+            mysql_distill.distill("SHOW GLOBAL VARIABLES"),
             "SHOW GLOBAL VARIABLES",
             "distills SHOW GLOBAL VARIABLES",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("administrator command: Statistics"),
+            mysql_distill.distill("administrator command: Statistics"),
             "ADMIN STATISTICS",
             "distills ADMIN STATISTICS",
         )
 
         # Issue 781: mk-query-digest doesn't distill or extract tables properly
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "SELECT `id` FROM (`field`) WHERE `id` = '10000016228434112371782015185031'"
             ),
             "SELECT field",
@@ -520,7 +510,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "INSERT INTO (`jedi_forces`) (name, side, email) values ('Anakin Skywalker', 'jedi', 'anakin_skywalker_at_jedi.sw')"
             ),
             "INSERT jedi_forces",
@@ -528,7 +518,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "UPDATE (`jedi_forces`) set side = 'dark' and name = 'Lord Vader' where name = 'Anakin Skywalker'"
             ),
             "UPDATE jedi_forces",
@@ -536,28 +526,26 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
-                "select c from (tbl1 JOIN tbl2 on (id)) where x=y"
-            ),
+            mysql_distill.distill("select c from (tbl1 JOIN tbl2 on (id)) where x=y"),
             "SELECT tbl?",
             "distills SELECT (t1 JOIN t2)",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("insert into (t1) value('a')"),
+            mysql_distill.distill("insert into (t1) value('a')"),
             "INSERT t?",
             "distills INSERT (tbl)",
         )
 
         # Something that will (should) never distill.
         self.assertEqual(
-            mysql_distill.rewriter.distill("-- how /*did*/ `THIS` #happen?"),
+            mysql_distill.distill("-- how /*did*/ `THIS` #happen?"),
             "",
             "distills nonsense",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("peek tbl poke db"), "", "distills non-SQL"
+            mysql_distill.distill("peek tbl poke db"), "", "distills non-SQL"
         )
 
         # Issue 1176: mk-query-digest incorrectly distills queries with certain keywords
@@ -565,7 +553,7 @@ class TestQueryRewriter(unittest.TestCase):
         # I want to see first how this is handled.  It's correct because the query
         # really does read from tables a and c table b is just an alias.
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "select c from (select * from a) as b where exists (select * from c where id is null)"
             ),
             "SELECT a c",
@@ -573,13 +561,13 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("select c from t where col='delete'"),
+            mysql_distill.distill("select c from t where col='delete'"),
             "SELECT t",
             "distills SELECT with keyword as value (issue 1176)",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 'SELECT c, replace(foo, bar) FROM t WHERE col <> "insert"'
             ),
             "SELECT t",
@@ -591,7 +579,7 @@ class TestQueryRewriter(unittest.TestCase):
         # INSERT and REPLACE without INTO
         # https://bugs.launchpad.net/percona-toolkit/+bug/984053
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "LOAD DATA LOW_PRIORITY LOCAL INFILE 'file' INTO TABLE tbl"
             ),
             "LOAD DATA tbl",
@@ -599,7 +587,7 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "LOAD DATA LOW_PRIORITY LOCAL INFILE 'file' INTO TABLE `tbl`"
             ),
             "LOAD DATA tbl",
@@ -607,13 +595,13 @@ class TestQueryRewriter(unittest.TestCase):
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("insert ignore_bar (id) values (4029731)"),
+            mysql_distill.distill("insert ignore_bar (id) values (4029731)"),
             "INSERT ignore_bar",
             "distill INSERT without INTO (bug 984053)",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("replace ignore_bar (id) values (4029731)"),
+            mysql_distill.distill("replace ignore_bar (id) values (4029731)"),
             "REPLACE ignore_bar",
             "distill REPLACE without INTO (bug 984053)",
         )
@@ -621,19 +609,19 @@ class TestQueryRewriter(unittest.TestCase):
         # IF EXISTS
         # https://bugs.launchpad.net/percona-toolkit/+bug/821690
         self.assertEqual(
-            mysql_distill.rewriter.distill("DROP TABLE IF EXISTS foo"),
+            mysql_distill.distill("DROP TABLE IF EXISTS foo"),
             "DROP TABLE foo",
             "distill DROP TABLE IF EXISTS foo (bug 821690)",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill("CREATE TABLE IF NOT EXISTS foo"),
+            mysql_distill.distill("CREATE TABLE IF NOT EXISTS foo"),
             "CREATE TABLE foo",
             msg="distill CREATE TABLE IF NOT EXISTS foo",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.distill(
+            mysql_distill.distill(
                 "(select * from table) union all (select * from other_table)"
             ),
             "SELECT UNION table other_table",
@@ -642,29 +630,29 @@ class TestQueryRewriter(unittest.TestCase):
 
     def test_strip_comments(self):
         self.assertEqual(
-            mysql_distill.rewriter.strip_comments("select \n--bar\n foo"),
+            mysql_distill.strip_comments("select \n--bar\n foo"),
             "select \n\n foo",
             msg="Removes one-line comments",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.strip_comments("select foo--bar\nfoo"),
+            mysql_distill.strip_comments("select foo--bar\nfoo"),
             "select foo\nfoo",
             msg="Removes one-line comments without running them together",
         )
 
         self.assertEqual(
-            mysql_distill.rewriter.strip_comments("select foo -- bar"),
+            mysql_distill.strip_comments("select foo -- bar"),
             "select foo ",
             msg="Removes one-line comments at end of line",
         )
         self.assertEqual(
-            mysql_distill.rewriter.strip_comments("select /*\nhello!*/ 1"),
+            mysql_distill.strip_comments("select /*\nhello!*/ 1"),
             "select  1",
             msg="Stripped star comment",
         )
         self.assertEqual(
-            mysql_distill.rewriter.strip_comments("select /*!40101 hello*/ 1"),
+            mysql_distill.strip_comments("select /*!40101 hello*/ 1"),
             "select /*!40101 hello*/ 1",
             msg="Left version star comment",
         )

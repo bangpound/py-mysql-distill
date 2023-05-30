@@ -6,5 +6,6 @@ A simple MySQL query distiller.
 
 :license: MIT, see LICENSE for more details.
 """
-import mysql_distill.parser
-import mysql_distill.rewriter
+from mysql_distill import *
+from mysql_distill.parser import *
+from mysql_distill.rewriter import *
