@@ -94,17 +94,21 @@ def distill(query: str) -> str:
     :param query:
     :return:
     """
+    _logger.info("distill: %s", query)
     verbs, table = distill_verbs(query)
+    _logger.info("distill: verbs=%s, table=%s", verbs, table)
 
     if verbs and _verb_show_re.match(verbs):
         alias_for = {"SCHEMA": "DATABASE", "KEYS": "INDEX", "INDEXES": "INDEX"}
         for alias_for_key, alias_for_value in alias_for.items():
             verbs = verbs.replace(alias_for_key, alias_for_value)
+        _logger.info("distill: show verbs=%s", verbs)
         query = verbs
     elif verbs and _verb_load_data_re.match(verbs):
         return verbs
     else:
         tables = _distill_tables(query, table)
+        _logger.info("distill: query=%s verbs=%s tables=%s", query, verbs, tables)
         query = " ".join([verbs] + tables)
 
     return query
